@@ -90,6 +90,7 @@ def test_move_beets(event_loop):
     context.release_props['platform'] = context.release_props['stage_platform']
     context.bucket = 'nightly'
     context.action = 'push-to-nightly'
+    context.raw_balrog_manifest = dict()
     context.artifacts_to_beetmove = get_upstream_artifacts(context)
     manifest = generate_beetmover_manifest(context)
 
@@ -122,7 +123,7 @@ def test_move_beets(event_loop):
     actual_destinations = []
 
     async def fake_move_beet(context, source, destinations, locale,
-                             update_balrog_manifest, artifact_pretty_name):
+                             update_balrog_manifest, artifact_pretty_name, from_buildid):
         actual_sources.append(source)
         actual_destinations.append(destinations)
 
@@ -141,6 +142,7 @@ def test_move_beet(event_loop):
     context.task = get_fake_valid_task()
     context.checksums = dict()
     context.balrog_manifest = list()
+    context.raw_balrog_manifest = dict()
     context.release_props = get_fake_balrog_props()["properties"]
     context.release_props['platform'] = context.release_props['stage_platform']
     locale = "sample-locale"
@@ -169,11 +171,12 @@ def test_move_beet(event_loop):
     with mock.patch('beetmoverscript.script.retry_upload', fake_retry_upload):
         event_loop.run_until_complete(
             move_beet(context, target_source, target_destinations, locale,
-                      update_balrog_manifest=True, artifact_pretty_name=pretty_name)
+                      update_balrog_manifest=True, artifact_pretty_name=pretty_name,
+                      from_buildid=None)
         )
     assert expected_upload_args == actual_upload_args
     for k in expected_balrog_manifest.keys():
-        assert (context.balrog_manifest[0]['completeInfo'][0][k] ==
+        assert (context.raw_balrog_manifest[locale]['completeInfo'][0][k] ==
                 expected_balrog_manifest[k])
 
 
