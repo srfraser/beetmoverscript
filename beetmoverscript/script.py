@@ -141,9 +141,9 @@ async def move_beets(context, artifacts_to_beetmove, manifest):
     # and collate it now.
     for locale in context.raw_balrog_manifest:
         balrog_entry = enrich_balrog_manifest(context, locale)
-        balrog_entry['completeInfo'] = context.balrog_manifest[locale]['completeInfo']
-        if 'partialInfo' in context.balrog_manifest[locale]:
-            balrog_entry['partialInfo'] = context.balrog_manifest[locale]['partialInfo']
+        balrog_entry['completeInfo'] = context.raw_balrog_manifest[locale]['completeInfo']
+        if 'partialInfo' in context.raw_balrog_manifest[locale]:
+            balrog_entry['partialInfo'] = context.raw_balrog_manifest[locale]['partialInfo']
         context.balrog_manifest.append(balrog_entry)
 
 
