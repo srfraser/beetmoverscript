@@ -12,7 +12,8 @@ from beetmoverscript import utils, script
 from beetmoverscript.constants import (
     STAGE_PLATFORM_MAP,
     RESTRICTED_BUCKET_PATHS,
-    CHECKSUMS_CUSTOM_FILE_NAMING
+    CHECKSUMS_CUSTOM_FILE_NAMING,
+    INSTALLER_ARTIFACTS
 )
 from scriptworker import artifacts as scriptworker_artifacts
 from scriptworker.exceptions import ScriptWorkerTaskException
@@ -69,6 +70,8 @@ def get_task_action(task, script_config):
     return action
 
 
+# TODO strip after declarative artifact manifest fully implemented
+# bucket paths are included in checksum and destination paths
 def validate_bucket_paths(bucket, s3_bucket_path):
     """Double check the S3 bucket path is valid for the given bucket"""
     try:
@@ -179,12 +182,28 @@ def update_props(context, props, platform_mapping):
     return props
 
 
-def get_updated_buildhub_artifact(path, installer_path, context, manifest, locale):
+def get_updated_buildhub_artifact(context, manifest, locale, artifacts_to_beetmove, buildhub_artifact_path):
     """
-    Read the file into a dict, alter the fields below, and return the updated dict
-    buildhub.json fields that should be changed: download.size, download.date, download.url
+    If there exists a buildhub.json artifact, then update the appropriate fields
+
+    buildhub.json fields that should be changed:
+    download.size, download.date, download.url
     """
-    contents = utils.load_json(path)
+    # get path of installer beet
+    installer_path = ''
+    for artifact in artifacts_to_beetmove[locale]:
+        if artifact in INSTALLER_ARTIFACTS:
+            installer_path = artifacts_to_beetmove[locale][artifact]
+
+    # throws error if buildhub.json is present and installer isn't
+    if not installer_path:
+        raise ScriptWorkerTaskException(
+            "could not determine installer path from task payload"
+        )
+
+    # load current buildhub.json
+    contents = utils.load_json(buildhub_artifact_path)
+    # build url of installer
     installer_name = os.path.basename(installer_path)
     dest = manifest['mapping'][locale][installer_name]['destinations']
     url_prefix = context.config["bucket_config"][context.bucket]["url_prefix"]
@@ -197,3 +216,61 @@ def get_updated_buildhub_artifact(path, installer_path, context, manifest, local
     contents['download']['url'] = urllib.parse.urljoin(url_prefix, url)
 
     return contents
+
+
+def artifactMap_get_updated_buildhub_artifact(context, artifact_map, locale, artifacts_to_beetmove, buildhub_artifact_path):
+    """
+    If there exists a buildhub.json artifact, then update the appropriate fields
+
+    buildhub.json fields that should be changed:
+    download.size, download.date, download.url
+    """
+    # get path of installer beet
+    installer_path = ''
+    for artifact in artifacts_to_beetmove[locale]:
+        if artifact in INSTALLER_ARTIFACTS:
+            installer_path = artifacts_to_beetmove[locale][artifact]
+
+    # throws error if buildhub.json is present and installer isn't
+    if not installer_path:
+        raise ScriptWorkerTaskException(
+            "could not determine installer path from task payload"
+        )
+
+    # load current buildhub.json
+    contents = utils.load_json(buildhub_artifact_path)
+    # build url of installer
+    taskId = get_taskId_from_full_path(buildhub_artifact_path)
+    installer_name = os.path.basename(installer_path)
+    dest = artifact_map[taskId][installer_name]['destinations']
+    url_prefix = context.config["bucket_config"][context.bucket]["url_prefix"]
+
+    # Update fields
+    contents['download']['size'] = utils.get_size(installer_path)
+    contents['download']['date'] = str(arrow.utcnow())
+    contents['download']['url'] = urllib.parse.urljoin(url_prefix, dest[0])
+
+    return contents
+
+
+def get_taskId_from_full_path(full_path_artifact):
+    """ Temporary fix: Extract the taskId from a full path artifact
+    Input: '/src/beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.mozinfo.json'
+    Output: 'eSzfNqMZT_mSiQQXu8hyqg'
+    """
+    split_path = full_path_artifact.split('/')
+
+    try:
+        cot_dir_index = split_path.index('cot')
+
+        try:
+            return split_path[cot_dir_index+1]
+        except IndexError:
+            raise ScriptWorkerTaskException(
+                "taskId unable to be extracted from path {}".format(full_path_artifact)
+            )
+
+    except ValueError:
+        raise ScriptWorkerTaskException(
+            "taskId unable to be extracted from path {}".format(full_path_artifact)
+        )

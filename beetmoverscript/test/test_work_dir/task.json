@@ -16,7 +16,7 @@
     "payload": {
         "upload_date": 1472747174,
         "releaseProperties": {
-            "appName": "Fake",
+            "appName": "Fake-Fennec",
             "appVersion": "99.0a1",
             "branch": "mozilla-central",
             "platform": "android-api-15",
@@ -50,9 +50,46 @@
           ],
           "taskId": "eSzfNqMZT_mSiQQXu8hyqg",
           "taskType": "build"
+        },
+        {
+          "locale": "en-US",
+          "paths": [
+            "public/build/fake-99.0a1.en-US.partial.mar"
+          ],
+          "taskId": "eSzfNqMZT_mSiQQXu8hyqg",
+          "taskType": "signing"
         }
       ]
     },
+    "extra": {
+       "index": {
+         "rank": 1527705780
+       },
+       "partials": [
+         {
+           "artifact_name": "fake-99.0a1.en-US.partial.mar",
+           "platform": "android-api-15",
+           "locale": "en-US",
+           "buildid": "20180524181234",
+           "previousVersion": "61.0b8",
+           "previousBuildNumber": "1"
+         }
+       ],
+       "treeherder": {
+         "jobKind": "build",
+         "groupSymbol": "fake-BMR-L10n",
+         "collection": {
+           "opt": true
+         },
+         "machine": {
+           "platform": "android-api-15"
+         },
+         "groupName": "Beetmover repackages for locales",
+         "tier": 1,
+         "symbol": "en-US"
+       },
+       "parent": "VIWyOqTaQZKWo5Fuj0MgaQ"
+   },
   "tags": {
     "createdForUser": "jcristau@mozilla.com",
     "kind": "beetmover-repackage",

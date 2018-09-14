@@ -16,20 +16,16 @@ mapping:
       destinations:
         - {{ upload_date }}-{{ branch }}-fake/{{ locale_prefix  }}fake-{{ version }}.{{ locale }}.target_info.txt
         - latest-{{ branch }}-fake/{{ locale_prefix  }}fake-{{ version }}.{{ locale }}.target_info.txt
-      update_balrog_manifest: true
     target.txt:
       s3_key: fake-{{ version }}.{{ locale }}.target.txt
       destinations:
         - {{ upload_date }}-{{ branch }}-fake/{{ locale_prefix  }}fake-{{ version }}.{{ locale }}.target.txt
         - latest-{{ branch }}-fake/{{ locale_prefix  }}fake-{{ version }}.{{ locale }}.target.txt
-      from_buildid: 19991231235959
-      update_balrog_manifest: true
     target.mozinfo.json:
       s3_key: fake-{{ version }}.{{ locale }}.target.mozinfo.json
       destinations:
         - {{ upload_date }}-{{ branch }}-fake/{{ locale_prefix  }}fake-{{ version }}.{{ locale }}.target.mozinfo.json
         - latest-{{ branch }}-fake/{{ locale_prefix  }}fake-{{ version }}.{{ locale }}.target.mozinfo.json
-      update_balrog_manifest: {format: mozinfo}
     target.test_packages.json:
       s3_key: fake-{{ version }}.{{ locale }}.target.test_packages.json
       destinations:
@@ -43,7 +39,16 @@ mapping:
     target.apk:
       s3_key: fake-{{ version }}.{{ locale }}.target.apk
       destinations:
-        - {{ upload_date }}-{{ branch }}-fake/{{ locale_prefix }}fake {{ version }}.{{ locale }}.target.apk
+        - {{ upload_date }}-{{ branch }}-fake/{{ locale_prefix }}fake-{{ version }}.{{ locale }}.target.apk
         - latest-{{ branch }}-fake/{{ locale_prefix }}fake-{{ version }}.{{ locale }}.target.apk
+      update_balrog_manifest: true
+  {% for partial in partials %}
+    {{ partial }}:
+      s3_key: fake-{{ version }}.{{ locale }}.partial.mar
+      destinations:
+        - update/{{ platform }}/{{ locale }}/fake-{{ version }}.{{ locale }}.partial.mar
+      update_balrog_manifest: true
+      from_buildid: {{ partials[partial].buildid }}
+  {% endfor %}
 
 {% endfor %}

@@ -115,6 +115,7 @@ def get_product_name(appName, platform):
     return appName
 
 
+# TODO strip after declarative artifact manifest fully implemented
 def generate_beetmover_template_args(context):
     task = context.task
     release_props = context.release_props
@@ -205,6 +206,7 @@ def _check_locale_consistency(locale_in_payload, uniques_locales_in_upstream_art
             )
 
 
+# TODO strip after declarative artifact manifest fully implemented
 def generate_beetmover_manifest(context):
     """
     generates and outputs a manifest that maps expected Taskcluster artifact names
@@ -233,6 +235,7 @@ def get_partials_props(task):
     return {p['artifact_name']: p for p in partials}
 
 
+# TODO strip after declarative artifact manifest fully implemented
 def alter_unpretty_contents(context, blobs, mappings):
     """Function to alter any unpretty-name contents from a file specified in script
     configs."""
@@ -286,3 +289,25 @@ def get_bucket_name(context, product):
 
 def get_bucket_url_prefix(context):
     return context.config['bucket_config'][context.bucket]['url_prefix']
+
+
+def is_submit_balrog(context, artifact, locale):
+    """ Submit the following to balrog:
+    target.complete.mar,
+    xxx-partial.mar,
+    target.apk (when it's l10n repacks or for multi locale)
+    """
+
+    def is_repack(context):
+        # TODO is there a better way to identify l10n repacks?
+        return 'L10n' in context.task['extra']['treeherder']['groupSymbol']
+
+    if artifact == 'target.complete.mar':
+        return True
+    elif 'partial.mar' in artifact:
+        return True
+    elif artifact == 'target.apk':
+        if is_repack(context) or locale == "multi":
+            return True
+
+    return False

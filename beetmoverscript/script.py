@@ -23,22 +23,24 @@ from beetmoverscript.constants import (
     MIME_MAP, RELEASE_BRANCHES, CACHE_CONTROL_MAXAGE, RELEASE_EXCLUDE,
     NORMALIZED_BALROG_PLATFORMS, PARTNER_REPACK_PUBLIC_PREFIX_TMPL,
     PARTNER_REPACK_PRIVATE_REGEXES, PARTNER_REPACK_PUBLIC_REGEXES, BUILDHUB_ARTIFACT,
-    INSTALLER_ARTIFACTS, DEFAULT_ZIP_MAX_FILE_SIZE_IN_MB
+    DEFAULT_ZIP_MAX_FILE_SIZE_IN_MB
 )
 from beetmoverscript.task import (
     validate_task_schema, add_balrog_manifest_to_artifacts,
     get_upstream_artifacts, get_release_props,
     add_checksums_to_artifacts, get_task_bucket, get_task_action, validate_bucket_paths,
-    get_updated_buildhub_artifact
+    get_updated_buildhub_artifact, artifactMap_get_updated_buildhub_artifact,
+    get_taskId_from_full_path
 )
 from beetmoverscript.utils import (
     get_hash, generate_beetmover_manifest,
-    get_size, alter_unpretty_contents, matches_exclude,
+    get_size, matches_exclude,
     get_candidates_prefix, get_releases_prefix, get_creds,
     get_bucket_name, get_bucket_url_prefix,
     is_release_action, is_promotion_action, get_partials_props,
     get_product_name, is_partner_action, is_partner_private_task,
-    is_partner_public_task, write_json
+    is_partner_public_task, alter_unpretty_contents,
+    is_submit_balrog, write_json
 )
 
 log = logging.getLogger(__name__)
@@ -90,6 +92,52 @@ async def push_to_nightly(context):
 
     #  write balrog_manifest to a file and add it to list of artifacts
     add_balrog_manifest_to_artifacts(context)
+    # determine the correct checksum filename and generate it, adding it to
+    # the list of artifacts afterwards
+    add_checksums_to_artifacts(context)
+
+
+
+# push_to_nightly {{{1
+async def artifactMap_push_to_nightly(context):
+    """Push artifacts to a certain location (e.g. nightly/ or candidates/).
+
+    Determine the list of artifacts to be transferred, generate the
+    mapping manifest, run some data validations, and upload the bits.
+
+    Upon successful transfer, generate checksums files and manifests to be
+    consumed downstream by balrogworkers."""
+
+    # determine artifacts to beetmove
+    context.artifacts_to_beetmove = get_upstream_artifacts(context)
+
+    context.release_props = get_release_props(context)
+
+    # perform another validation check against the bucket path
+    # validate_bucket_paths(context.bucket, mapping_manifest['s3_bucket_path'])
+
+    # balrog_manifest is written and uploaded as an artifact which is used by
+    # a subsequent balrogworker task in the release graph. Balrogworker uses
+    # this manifest to submit release blob info (e.g. mar filename, size, etc)
+    context.balrog_manifest = list()
+
+    # Used as a staging area to generate balrog_manifest, so that all the
+    # completes and partials for a release end up in the same data structure
+    context.raw_balrog_manifest = dict()
+
+    # the checksums manifest is written and uploaded as an artifact which is
+    # used by a subsequent signing task and again by another beetmover task to
+    # upload it to S3
+    context.checksums = dict()
+
+    # for each artifact in manifest
+    #   a. map each upstream artifact to pretty name release bucket format
+    #   b. upload to corresponding S3 location
+    await artifactMap_move_beets(context, context.artifacts_to_beetmove, context.task['payload']['artifactMap'])
+
+    #  write balrog_manifest to a file and add it to list of artifacts
+    add_balrog_manifest_to_artifacts(context)
+
     # determine the correct checksum filename and generate it, adding it to
     # the list of artifacts afterwards
     add_checksums_to_artifacts(context)
@@ -263,6 +311,8 @@ action_map = {
     'push-to-candidates': push_to_nightly,
     'push-to-releases': push_to_releases,
     'push-to-maven': push_to_maven,
+    'push-to-nightly-2': artifactMap_push_to_nightly,
+    'push-to-candidates-2': artifactMap_push_to_nightly
 }
 
 
@@ -272,6 +322,10 @@ async def async_main(context):
         logging.getLogger(module).setLevel(logging.INFO)
 
     setup_mimetypes()
+
+    # point to artifactMap schema file for validation
+    if context.action == 'push-to-nightly-2' or context.action == 'push-to-candidates-2':
+        context.config['schema_file'] = "beetmoverscript/data/artifactMap_beetmover_task_schema.json"
 
     validate_task_schema(context)
 
@@ -294,50 +348,92 @@ async def async_main(context):
 
 # move_beets {{{1
 async def move_beets(context, artifacts_to_beetmove, manifest):
+    partials_props = get_partials_props(context.task)
+
     beets = []
 
     for locale in artifacts_to_beetmove:
+        # write to buildhub.json
+        buildhub_artifact_path = artifacts_to_beetmove[locale].get(BUILDHUB_ARTIFACT, '')
+        if buildhub_artifact_path:
+            buildhub_contents = get_updated_buildhub_artifact(context,
+                                                              manifest,
+                                                              locale,
+                                                              artifacts_to_beetmove,
+                                                              buildhub_artifact_path
+                                                              )
 
-        installer_path = ''
-        buildhub_artifact_exists = False
-        # get path of installer beet
-        for artifact in artifacts_to_beetmove[locale]:
-            if artifact in INSTALLER_ARTIFACTS:
-                installer_path = artifacts_to_beetmove[locale][artifact]
-            if artifact == BUILDHUB_ARTIFACT:
-                buildhub_artifact_exists = True
-
-        # throws error if buildhub.json is present and installer isn't
-        if not installer_path and buildhub_artifact_exists:
-            raise ScriptWorkerTaskException(
-                "could not determine installer path from task payload"
-            )
+        write_json(buildhub_artifact_path, buildhub_contents)
 
         # move beets
         for artifact in artifacts_to_beetmove[locale]:
             source = artifacts_to_beetmove[locale][artifact]
-            artifact_pretty_name = manifest['mapping'][locale][artifact]['s3_key']
 
-            # update buildhub.json file
-            # if there is no installer then there will be no buildhub.json artifact
-            # in logical coding terms, this means that if installer_path is an empty
-            # string, then this if-block is never reached
-            if artifact == BUILDHUB_ARTIFACT:
-                write_json(source, get_updated_buildhub_artifact(source, installer_path, context, manifest, locale))
-
+            artifact_checksums_path = manifest['mapping'][locale][artifact]['s3_key']
             destinations = [os.path.join(manifest["s3_bucket_path"],
                                          dest) for dest in
                             manifest['mapping'][locale][artifact]['destinations']]
 
-            balrog_manifest = manifest['mapping'][locale][artifact].get('update_balrog_manifest')
+
+            is_update_balrog_manifest = is_submit_balrog(context, artifact, locale)
+
             # For partials
-            from_buildid = manifest['mapping'][locale][artifact].get('from_buildid')
+            from_buildid = partials_props.get(artifact, {}).get('buildid', '')
             beets.append(
                 asyncio.ensure_future(
                     move_beet(context, source, destinations, locale=locale,
-                              update_balrog_manifest=balrog_manifest,
+                              update_balrog_manifest=is_update_balrog_manifest,
                               from_buildid=from_buildid,
-                              artifact_pretty_name=artifact_pretty_name)
+                              artifact_checksums_path=artifact_checksums_path)
+                )
+            )
+    await raise_future_exceptions(beets)
+
+    # Fix up balrog manifest. We need an entry with both completes and
+    # partials, which is why we store up the data from each moved beet
+    # and collate it now.
+    for locale in context.raw_balrog_manifest:
+        balrog_entry = enrich_balrog_manifest(context, locale)
+        balrog_entry['completeInfo'] = context.raw_balrog_manifest[locale]['completeInfo']
+        if 'partialInfo' in context.raw_balrog_manifest[locale]:
+            balrog_entry['partialInfo'] = context.raw_balrog_manifest[locale]['partialInfo']
+        context.balrog_manifest.append(balrog_entry)
+
+
+# move_beets {{{1
+async def artifactMap_move_beets(context, artifacts_to_beetmove, artifact_map):
+    partials_props = get_partials_props(context.task)
+
+    beets = []
+    for locale in artifacts_to_beetmove:
+        # write to buildhub.json
+        buildhub_artifact_path = artifacts_to_beetmove[locale].get(BUILDHUB_ARTIFACT, '')
+        if buildhub_artifact_path:
+            buildhub_contents = artifactMap_get_updated_buildhub_artifact(context,
+                                                                          artifact_map,
+                                                                          locale,
+                                                                          artifacts_to_beetmove,
+                                                                          buildhub_artifact_path
+                                                                          )
+
+        write_json(buildhub_artifact_path, buildhub_contents)
+
+        # move beets
+        for artifact in artifacts_to_beetmove[locale]:
+            source = artifacts_to_beetmove[locale][artifact]
+            taskId = get_taskId_from_full_path(source)
+            artifact_checksums_path = artifact_map[taskId][artifact]['checksums_path']
+            destinations = artifact_map[taskId][artifact]['destinations']
+            is_update_balrog_manifest = is_submit_balrog(context, artifact, locale)
+
+            # For partials
+            from_buildid = partials_props.get(artifact, {}).get('buildid', '')
+            beets.append(
+                asyncio.ensure_future(
+                    move_beet(context, source, destinations, locale=locale,
+                              update_balrog_manifest=is_update_balrog_manifest,
+                              from_buildid=from_buildid,
+                              artifact_pretty_name=artifact_checksums_path)
                 )
             )
     await raise_future_exceptions(beets)
@@ -358,19 +454,19 @@ async def move_beets(context, artifacts_to_beetmove, manifest):
 
 # move_beet {{{1
 async def move_beet(context, source, destinations, locale,
-                    update_balrog_manifest, from_buildid, artifact_pretty_name):
+                    update_balrog_manifest, from_buildid, artifact_checksums_path):
     await retry_upload(context=context, destinations=destinations, path=source)
 
-    if context.checksums.get(artifact_pretty_name) is None:
-        context.checksums[artifact_pretty_name] = {
+    if context.checksums.get(artifact_checksums_path) is None:
+        context.checksums[artifact_checksums_path] = {
             algo: get_hash(source, algo) for algo in context.config['checksums_digests']
         }
-        context.checksums[artifact_pretty_name]['size'] = get_size(source)
+        context.checksums[artifact_checksums_path]['size'] = get_size(source)
 
     if update_balrog_manifest:
         context.raw_balrog_manifest.setdefault(locale, {})
         balrog_info = generate_balrog_info(
-            context, artifact_pretty_name,
+            context, artifact_checksums_path,
             locale, destinations, from_buildid,
         )
         if from_buildid:
@@ -401,12 +497,12 @@ async def move_partner_beets(context, manifest):
             if is_partner_public_task(context):
                 # we trim the full destination to the part after
                 # candidates/{version}-candidates/build{build_number}/
-                artifact_pretty_name = destination[destination.find(locale):]
-                if context.checksums.get(artifact_pretty_name) is None:
-                    context.checksums[artifact_pretty_name] = {
+                artifact_checksums_path = destination[destination.find(locale):]
+                if context.checksums.get(artifact_checksums_path) is None:
+                    context.checksums[artifact_checksums_path] = {
                         algo: get_hash(source, algo) for algo in context.config['checksums_digests']
                     }
-                    context.checksums[artifact_pretty_name]['size'] = get_size(source)
+                    context.checksums[artifact_checksums_path]['size'] = get_size(source)
 
     await raise_future_exceptions(beets)
 
@@ -465,7 +561,7 @@ def get_destination_for_partner_repack_path(context, manifest, full_path, locale
 
 
 # generate_balrog_info {{{1
-def generate_balrog_info(context, artifact_pretty_name, locale, destinations, from_buildid=None):
+def generate_balrog_info(context, artifact_checksums_path, locale, destinations, from_buildid=None):
     release_props = context.release_props
     checksums = context.checksums
 
@@ -473,12 +569,12 @@ def generate_balrog_info(context, artifact_pretty_name, locale, destinations, fr
                                      s3_key=destinations[0])
 
     data = {
-        "hash": checksums[artifact_pretty_name][release_props["hashType"]],
-        "size": checksums[artifact_pretty_name]['size'],
+        "hash": checksums[artifact_checksums_path][release_props["hashType"]],
+        "size": checksums[artifact_checksums_path]['size'],
         "url": url
     }
     if from_buildid:
-        data["from_buildid"] = from_buildid
+        data["from_buildid"] = int(from_buildid)
         if is_promotion_action(context.action):
             partials = get_partials_props(context.task)
             for p in partials.values():
