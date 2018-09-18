@@ -2,6 +2,7 @@ import json
 import os
 import pytest
 import tempfile
+from freezegun import freeze_time
 from beetmoverscript.test import (
     context, get_fake_valid_task, get_fake_valid_config, get_fake_checksums_manifest
 )
@@ -9,7 +10,9 @@ from beetmoverscript.task import (
     validate_task_schema, add_balrog_manifest_to_artifacts,
     get_upstream_artifacts, get_upstream_artifacts_with_zip_extract_param,
     generate_checksums_manifest, get_task_bucket, get_task_action,
-    validate_bucket_paths, get_release_props, is_custom_checksums_task
+    validate_bucket_paths, get_release_props, is_custom_checksums_task,
+    get_updated_buildhub_artifact, artifactMap_get_updated_buildhub_artifact,
+    get_taskId_from_full_path
 )
 from scriptworker.context import Context
 from scriptworker.exceptions import ScriptWorkerTaskException
@@ -36,14 +39,16 @@ def test_exception_get_upstream_artifacts():
      'target_info.txt',
      'target.test_packages.json',
      'buildhub.json',
-     'target.apk'], False
+     'target.apk',
+     'fake-99.0a1.en-US.partial.mar'], False
 ), (
     ['public/build/target.txt',
      'public/build/target.mozinfo.json',
      'public/build/target_info.txt',
      'public/build/target.test_packages.json',
      'public/build/buildhub.json',
-     'public/build/target.apk'], True
+     'public/build/target.apk',
+     'public/build/fake-99.0a1.en-US.partial.mar'], True
 )))
 def test_get_upstream_artifacts(expected, preserve):
     context = Context()
@@ -96,19 +101,22 @@ def test_get_upstream_artifacts_with_zip_extract_param(monkeypatch):
         'firstTaskId': [{
             'paths': [
                 os.path.join(context.config['work_dir'], 'cot', 'firstTaskId', 'a/non/archive'),
-                os.path.join(context.config['work_dir'], 'cot', 'firstTaskId', 'another/non/archive'),
+                os.path.join(context.config['work_dir'], 'cot',
+                             'firstTaskId', 'another/non/archive'),
             ],
             'zip_extract': False,
         }, {
             'paths': [
                 os.path.join(context.config['work_dir'], 'cot', 'firstTaskId', 'archive1.zip'),
-                os.path.join(context.config['work_dir'], 'cot', 'firstTaskId', 'subfolder/archive2.zip'),
+                os.path.join(context.config['work_dir'], 'cot',
+                             'firstTaskId', 'subfolder/archive2.zip'),
             ],
             'zip_extract': True,
         }],
         'secondTaskId': [{
             'paths': [
-                os.path.join(context.config['work_dir'], 'cot', 'secondTaskId', 'just/another/regular/file'),
+                os.path.join(context.config['work_dir'], 'cot',
+                             'secondTaskId', 'just/another/regular/file'),
             ],
             'zip_extract': False,
         }],
@@ -148,7 +156,8 @@ def test_validate_task(context):
 )))
 def test_get_task_bucket(scopes, expected, raises):
     task = {'scopes': scopes}
-    config = {'bucket_config': {'dep': ''}, 'taskcluster_scope_prefix': 'project:releng:beetmover:'}
+    config = {'bucket_config': {'dep': ''},
+              'taskcluster_scope_prefix': 'project:releng:beetmover:'}
     if raises:
         with pytest.raises(ScriptWorkerTaskException):
             get_task_bucket(task, config)
@@ -246,7 +255,7 @@ def test_checksums_manifest_generation():
 
 
 # get_release_props {{{1
-@pytest.mark.parametrize("taskjson,locale, relprops, expected", ((
+@pytest.mark.parametrize("taskjson, locale, relprops, expected", ((
     'task.json', False, {
         "platform": "android-api-16",
     }, {
@@ -292,7 +301,7 @@ def test_get_release_props(context, mocker, taskjson, locale, relprops, expected
 
 
 # is_custom_beetmover_checksums_task {{{1
-@pytest.mark.parametrize("kind,expected", ((
+@pytest.mark.parametrize("kind, expected", ((
     "beetmover-source", "-source"
 ), (
     "beetmover-repackage", ""
@@ -302,3 +311,124 @@ def test_get_release_props(context, mocker, taskjson, locale, relprops, expected
 def test_is_custom_beetmover_task(context, kind, expected):
     context.task['tags']['kind'] = kind
     assert is_custom_checksums_task(context) == expected
+
+# get_updated_buildhub_artifact {{{1
+
+
+@freeze_time('2018-01-19 12:59:59')
+@pytest.mark.parametrize("exists_installer", ((
+    True
+), (
+    False
+),))
+def test_get_updated_buildhub_artifact(context, mocker, exists_installer):
+    artifacts_to_beetmove = {
+        'en-US': {
+            'buildhub.json': 'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/buildhub.json',
+            'target.apk': 'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.apk',
+            'target.mozinfo.json': 'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.mozinfo.json',
+            'target.test_packages.json': 'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.test_packages.json',
+            'target.txt': 'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.txt',
+            'target_info.txt': 'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target_info.txt'
+        }
+    }
+    manifest = {
+        "mapping": {
+            "en-US": {
+                "target.apk": {
+                    "destinations": [
+                        "2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.apk",
+                        "latest-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.apk"
+                    ],
+                    "s3_key": "fake-99.0a1.en-US.target.apk"
+                }
+            }
+        },
+        "s3_bucket_path": "pub/mobile/nightly/"
+    }
+    locale = 'en-US'
+    buildhub_artifact_path = "beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/buildhub.json"
+    expected = {
+        "date": "2018-01-19T12:59:59+00:00",
+        "url": "https://archive.test/pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.apk",
+        "size": 7201
+    }
+
+    if exists_installer:
+        buildhub_contents = get_updated_buildhub_artifact(
+            context, manifest, locale, artifacts_to_beetmove, buildhub_artifact_path)
+        assert buildhub_contents["download"]["date"] == expected["date"]
+        assert buildhub_contents["download"]["url"] == expected["url"]
+        assert buildhub_contents["download"]["size"] == expected["size"]
+
+    else:
+        del artifacts_to_beetmove[locale]['target.apk']
+        with pytest.raises(ScriptWorkerTaskException):
+            get_updated_buildhub_artifact(context, manifest, locale,
+                                          artifacts_to_beetmove, buildhub_artifact_path)
+
+
+# artifactMap_get_updated_buildhub_artifact {{{1
+@freeze_time('2018-01-19 12:59:59')
+@pytest.mark.parametrize("exists_installer", ((
+    True
+), (
+    False
+),))
+def test_artifactMap_get_updated_buildhub_artifact(context, mocker, exists_installer):
+    artifacts_to_beetmove = {
+        'en-US': {
+            'buildhub.json': 'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/buildhub.json',
+            'target.apk': 'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.apk',
+            'target.mozinfo.json': 'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.mozinfo.json',
+            'target.test_packages.json': 'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.test_packages.json',
+            'target.txt': 'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.txt',
+            'target_info.txt': 'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target_info.txt'
+        }
+    }
+    artifact_map = {
+        "eSzfNqMZT_mSiQQXu8hyqg": {
+            "target.apk": {
+                "checksums_path": "pub/mobile/nightly/fake-99.0a1.en-US.target.apk",
+                "destinations": [
+                    "pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.apk",
+                    "pub/mobile/nightly/latest-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.apk"
+                ]
+            }
+        }
+    }
+    locale = 'en-US'
+    buildhub_artifact_path = "beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/buildhub.json"
+    expected = {
+        "date": "2018-01-19T12:59:59+00:00",
+        "url": "https://archive.test/pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.apk",
+        "size": 7201
+    }
+
+    if exists_installer:
+        buildhub_contents = artifactMap_get_updated_buildhub_artifact(
+            context, artifact_map, locale, artifacts_to_beetmove, buildhub_artifact_path)
+        assert buildhub_contents["download"]["date"] == expected["date"]
+        assert buildhub_contents["download"]["url"] == expected["url"]
+        assert buildhub_contents["download"]["size"] == expected["size"]
+
+    else:
+        del artifacts_to_beetmove[locale]['target.apk']
+        with pytest.raises(ScriptWorkerTaskException):
+            artifactMap_get_updated_buildhub_artifact(
+                context, artifact_map, locale, artifacts_to_beetmove, buildhub_artifact_path)
+
+
+# get_taskId_from_full_path {{{1
+@pytest.mark.parametrize("full_path_artifact, expected", ((
+    "/src/beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.mozinfo.json",
+    "eSzfNqMZT_mSiQQXu8hyqg"
+), (
+    "/src/fake-path/file.json", ""
+),))
+def test_get_taskId_from_full_path(full_path_artifact, expected):
+    if expected:
+        assert get_taskId_from_full_path(full_path_artifact) == expected
+    else:
+        with pytest.raises(ScriptWorkerTaskException):
+            get_taskId_from_full_path(full_path_artifact)

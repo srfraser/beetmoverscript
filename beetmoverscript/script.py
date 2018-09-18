@@ -97,7 +97,6 @@ async def push_to_nightly(context):
     add_checksums_to_artifacts(context)
 
 
-
 # push_to_nightly {{{1
 async def artifactMap_push_to_nightly(context):
     """Push artifacts to a certain location (e.g. nightly/ or candidates/).
@@ -374,9 +373,7 @@ async def move_beets(context, artifacts_to_beetmove, manifest):
                                          dest) for dest in
                             manifest['mapping'][locale][artifact]['destinations']]
 
-
             is_update_balrog_manifest = is_submit_balrog(context, artifact, locale)
-
             # For partials
             from_buildid = partials_props.get(artifact, {}).get('buildid', '')
             beets.append(
@@ -392,12 +389,15 @@ async def move_beets(context, artifacts_to_beetmove, manifest):
     # Fix up balrog manifest. We need an entry with both completes and
     # partials, which is why we store up the data from each moved beet
     # and collate it now.
-    for locale in context.raw_balrog_manifest:
-        balrog_entry = enrich_balrog_manifest(context, locale)
-        balrog_entry['completeInfo'] = context.raw_balrog_manifest[locale]['completeInfo']
-        if 'partialInfo' in context.raw_balrog_manifest[locale]:
-            balrog_entry['partialInfo'] = context.raw_balrog_manifest[locale]['partialInfo']
-        context.balrog_manifest.append(balrog_entry)
+    for locale, info in context.raw_balrog_manifest.items():
+        for format in info['completeInfo']:
+            balrog_entry = enrich_balrog_manifest(context, locale)
+            balrog_entry['completeInfo'] = [info['completeInfo'][format]]
+            if 'partialInfo' in info:
+                balrog_entry['partialInfo'] = info['partialInfo']
+            if format:
+                balrog_entry['blob_suffix'] = '-{}'.format(format)
+            context.balrog_manifest.append(balrog_entry)
 
 
 # move_beets {{{1
@@ -433,7 +433,7 @@ async def artifactMap_move_beets(context, artifacts_to_beetmove, artifact_map):
                     move_beet(context, source, destinations, locale=locale,
                               update_balrog_manifest=is_update_balrog_manifest,
                               from_buildid=from_buildid,
-                              artifact_pretty_name=artifact_checksums_path)
+                              artifact_checksums_path=artifact_checksums_path)
                 )
             )
     await raise_future_exceptions(beets)
@@ -556,7 +556,8 @@ def get_destination_for_partner_repack_path(context, manifest, full_path, locale
             locale, {'version': version, 'build_number': build_number},
             PARTNER_REPACK_PUBLIC_REGEXES
         )
-        prefix = PARTNER_REPACK_PUBLIC_PREFIX_TMPL.format(version=version, build_number=build_number)
+        prefix = PARTNER_REPACK_PUBLIC_PREFIX_TMPL.format(
+            version=version, build_number=build_number)
         return os.path.join(prefix, pretty_full_path)
 
 

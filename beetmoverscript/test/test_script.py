@@ -118,9 +118,12 @@ async def test_push_to_releases(context, mocker, candidates_keys,
 async def test_push_to_maven(context, mocker, extract_zip_output, ErrorRaised):
     mocker.patch('beetmoverscript.utils.JINJA_ENV', get_test_jinja_env())
     context.task['payload']['upstreamArtifacts'] = []
-    mocker.patch('beetmoverscript.task.get_upstream_artifacts_with_zip_extract_param', new=lambda _: None)
-    mocker.patch('beetmoverscript.maven_utils.get_maven_expected_files_per_archive_per_task_id', new=lambda _, __: ('', {}))
-    mocker.patch('beetmoverscript.zip.check_and_extract_zip_archives', new=lambda _, __, ___: extract_zip_output)
+    mocker.patch('beetmoverscript.task.get_upstream_artifacts_with_zip_extract_param',
+                 new=lambda _: None)
+    mocker.patch('beetmoverscript.maven_utils.get_maven_expected_files_per_archive_per_task_id',
+                 new=lambda _, __: ('', {}))
+    mocker.patch('beetmoverscript.zip.check_and_extract_zip_archives',
+                 new=lambda _, __, ___: extract_zip_output)
 
     if ErrorRaised is None:
         async def assert_artifacts_to_beetmove(_, artifacts_to_beetmove, __):
@@ -208,7 +211,8 @@ def test_list_bucket_objects():
     s3_resource.Bucket = fake_bucket
     bucket.objects.filter = fake_filter
 
-    assert list_bucket_objects(mock.MagicMock(), s3_resource, None) == {"one": "asdf", "two": "foo"}
+    assert list_bucket_objects(mock.MagicMock(), s3_resource, None) == {
+        "one": "asdf", "two": "foo"}
 
 
 # setup_mimetypes {{{1
@@ -367,29 +371,8 @@ async def test_move_beets(partials, mocker, tmpdir):
         ['pub/mobile/nightly/update/android-api-15/en-US/fake-99.0a1.en-US.partial.mar']
     ]
 
-    expected_balrog_manifest = []
-    for complete_info in [
+    expected_balrog_manifest = [
         {
-            'completeInfo': [
-                {
-                    'hash': 'dummyhash',
-                    'size': 123456,
-                    'url': 'pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target_info.txt'
-                }
-            ],
-        },
-        {
-            'blob_suffix': '-mozinfo',
-            'completeInfo': [
-                {
-                    'hash': 'dummyhash',
-                    'size': 123456,
-                    'url': 'pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.mozinfo.json'
-                },
-            ],
-        },
-    ]:
-        entry = {
             'tc_nightly': True,
             'appName': 'Fake-Fennec',
             'appVersion': '99.0a1',
@@ -400,18 +383,25 @@ async def test_move_beets(partials, mocker, tmpdir):
             'locale': 'en-US',
             'platform': 'android-api-15',
             'url_replacements': [['http://archive.mozilla.org/pub', 'http://download.cdn.mozilla.net/pub']],
+            'completeInfo': [
+                {
+                    'hash': 'dummyhash',
+                    'size': 123456,
+                    'url': 'pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.apk'
+                }
+            ],
         }
-        entry.update(complete_info)
-        if partials:
-                entry['partialInfo'] = [
-                    {
-                        'from_buildid': 19991231235959,
-                        'hash': 'dummyhash',
-                        'size': 123456,
-                        'url': 'pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.txt'
-                    }
-                ]
-        expected_balrog_manifest.append(entry)
+    ]
+
+    if partials:
+        expected_balrog_manifest[0]['partialInfo'] = [
+            {
+                'from_buildid': "20180524181234",
+                'hash': 'dummyhash',
+                'size': 123456,
+                'url': 'pub/mobile/nightly/update/android-api-15/en-US/fake-99.0a1.en-US.partial.mar'
+            }
+        ]
 
     actual_sources = []
     actual_destinations = []
@@ -432,15 +422,152 @@ async def test_move_beets(partials, mocker, tmpdir):
             }
             context.raw_balrog_manifest.setdefault(locale, {})
             if from_buildid:
-                data["from_buildid"] = from_buildid
-                component = 'partialInfo'
+                if partials:
+                    data["from_buildid"] = from_buildid
+                    context.raw_balrog_manifest[locale].setdefault('partialInfo', []).append(data)
+                else:
+                    return
             else:
                 if update_balrog_manifest is True:
                     update_balrog_manifest = {'format': ''}
                 context.raw_balrog_manifest[locale].setdefault('completeInfo', {})[
                     update_balrog_manifest['format']] = data
 
-    async def fake_write_json(buildhub_artifact_path, buildhub_contents):
+    def fake_write_json(buildhub_artifact_path, buildhub_contents):
+        pass
+
+    mocker.patch.object(beetmoverscript.script, 'move_beet', new=fake_move_beet)
+    mocker.patch.object(beetmoverscript.script, 'write_json', new=fake_write_json)
+    await move_beets(context, context.artifacts_to_beetmove, manifest)
+    assert sorted(expected_sources) == sorted(actual_sources)
+    assert sorted(expected_destinations) == sorted(actual_destinations)
+
+    # Deal with different-sorted completeInfo
+    sort_manifest(context.balrog_manifest)
+    sort_manifest(expected_balrog_manifest)
+    assert context.balrog_manifest == expected_balrog_manifest
+
+
+# move_beets {{{1
+@pytest.mark.asyncio
+@pytest.mark.parametrize("partials", (False, True))
+async def test_artifactMap_move_beets(partials, mocker, tmpdir):
+    mocker.patch('beetmoverscript.utils.JINJA_ENV', get_test_jinja_env())
+
+    context = Context()
+    context.config = get_fake_valid_config()
+    context.task = get_fake_valid_task('artifactMap_task.json')
+    context.release_props = context.task['payload']['releaseProperties']
+    context.release_props['stage_platform'] = context.release_props['platform']
+    context.bucket = 'nightly'
+    context.action = 'push-to-nightly'
+    context.raw_balrog_manifest = dict()
+    context.balrog_manifest = list()
+    context.artifacts_to_beetmove = get_upstream_artifacts(context)
+    artifactMap = context.task['payload']['artifactMap']
+
+    expected_sources = [
+        os.path.abspath(
+            'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.mozinfo.json'
+        ),
+        os.path.abspath(
+            'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.txt',
+        ),
+        os.path.abspath(
+            'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target_info.txt'
+        ),
+        os.path.abspath(
+            'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.test_packages.json'
+        ),
+        os.path.abspath(
+            'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/buildhub.json'
+        ),
+        os.path.abspath(
+            'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.apk'
+        ),
+        os.path.abspath(
+            'beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/fake-99.0a1.en-US.partial.mar'
+        )
+    ]
+    expected_destinations = [
+        ['pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target_info.txt',
+         'pub/mobile/nightly/latest-mozilla-central-fake/en-US/fake-99.0a1.en-US.target_info.txt'],
+        ['pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.mozinfo.json',
+         'pub/mobile/nightly/latest-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.mozinfo.json'],
+        ['pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.txt',
+         'pub/mobile/nightly/latest-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.txt'],
+        ['pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.test_packages.json',
+         'pub/mobile/nightly/latest-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.test_packages.json'],
+        ['pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.buildhub.json',
+         'pub/mobile/nightly/latest-mozilla-central-fake/en-US/fake-99.0a1.en-US.buildhub.json'],
+        ['pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.apk',
+         'pub/mobile/nightly/latest-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.apk'],
+        ['pub/mobile/nightly/update/android-api-15/en-US/fake-99.0a1.en-US.partial.mar']
+    ]
+
+    expected_balrog_manifest = [
+        {
+            'tc_nightly': True,
+            'appName': 'Fake-Fennec',
+            'appVersion': '99.0a1',
+            'branch': 'mozilla-central',
+            'buildid': '20990205110000',
+            'extVersion': '99.0a1',
+            'hashType': 'sha512',
+            'locale': 'en-US',
+            'platform': 'android-api-15',
+            'url_replacements': [['http://archive.mozilla.org/pub', 'http://download.cdn.mozilla.net/pub']],
+            'completeInfo': [
+                {
+                    'hash': 'dummyhash',
+                    'size': 123456,
+                    'url': 'pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.apk'
+                }
+            ],
+        }
+    ]
+
+    if partials:
+        expected_balrog_manifest[0]['partialInfo'] = [
+            {
+                'from_buildid': "20180524181234",
+                'hash': 'dummyhash',
+                'size': 123456,
+                'url': 'pub/mobile/nightly/update/android-api-15/en-US/fake-99.0a1.en-US.partial.mar'
+            }
+        ]
+
+    actual_sources = []
+    actual_destinations = []
+
+    def sort_manifest(manifest):
+        manifest.sort(key=lambda entry: entry.get('blob_suffix', ''))
+
+    async def fake_move_beet(context, source, destinations, locale,
+                             update_balrog_manifest, artifact_checksums_path, from_buildid):
+        actual_sources.append(source)
+        actual_destinations.append(destinations)
+        if update_balrog_manifest:
+
+            data = {
+                "hash": 'dummyhash',
+                "size": 123456,
+                "url": destinations[0]
+            }
+            context.raw_balrog_manifest.setdefault(locale, {})
+            if from_buildid:
+                if partials:
+                    data["from_buildid"] = from_buildid
+                    context.raw_balrog_manifest[locale].setdefault('partialInfo', []).append(data)
+                else:
+                    return
+            else:
+                if update_balrog_manifest is True:
+                    update_balrog_manifest = {'format': ''}
+                context.raw_balrog_manifest[locale].setdefault('completeInfo', {})[
+                    update_balrog_manifest['format']] = data
+
+    def fake_write_json(buildhub_artifact_path, buildhub_contents):
         pass
 
     mocker.patch.object(beetmoverscript.script, 'move_beet', new=fake_move_beet)
@@ -459,10 +586,10 @@ async def test_move_beets(partials, mocker, tmpdir):
 # move_beet {{{1
 @pytest.mark.asyncio
 @pytest.mark.parametrize('update_manifest,action', [
-     (True, 'push-to-candidates'),
-     (True, 'push-to-nightly'),
-     (False, 'push-to-nightly'),
-     (False, 'push-to-candidates')
+    (True, 'push-to-candidates'),
+    (True, 'push-to-nightly'),
+    (False, 'push-to-nightly'),
+    (False, 'push-to-candidates')
 ])
 async def test_move_beet(update_manifest, action):
     context = Context()
@@ -549,7 +676,8 @@ async def test_move_partner_beets(context, mocker):
     mocker.patch('beetmoverscript.utils.JINJA_ENV', get_test_jinja_env())
     mapping_manifest = generate_beetmover_manifest(context)
 
-    mocker.patch.object(beetmoverscript.script, 'get_destination_for_partner_repack_path', new=noop_sync)
+    mocker.patch.object(beetmoverscript.script,
+                        'get_destination_for_partner_repack_path', new=noop_sync)
     mocker.patch.object(beetmoverscript.script, 'upload_to_s3', new=noop_async)
     await move_partner_beets(context, mapping_manifest)
 
@@ -575,12 +703,12 @@ def test_get_destination_for_partner_repack_path(context, full_path,
     context.task['payload']['build_number'] = 99
     context.task['payload']['version'] = '9999.0'
     context.task['payload']['releaseProperties'] = {
-      "appName": "Firefox",
-      "buildid": "20180328233904",
-      "appVersion": "9999.0",
-      "hashType": "sha512",
-      "platform": "linux",
-      "branch": "maple"
+        "appName": "Firefox",
+        "buildid": "20180328233904",
+        "appVersion": "9999.0",
+        "hashType": "sha512",
+        "platform": "linux",
+        "branch": "maple"
     }
     # hack in locale
     for artifact_dict in context.task['payload']['upstreamArtifacts']:

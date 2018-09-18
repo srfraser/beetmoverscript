@@ -14,7 +14,8 @@ from beetmoverscript.utils import (generate_beetmover_manifest, get_hash,
                                    get_partials_props, matches_exclude, get_candidates_prefix,
                                    get_releases_prefix, get_product_name,
                                    is_partner_private_task, is_partner_public_task,
-                                   _check_locale_consistency)
+                                   _check_locale_consistency, is_submit_balrog
+                                   )
 from beetmoverscript.constants import HASH_BLOCK_SIZE
 
 assert context  # silence pyflakes
@@ -22,7 +23,8 @@ assert context  # silence pyflakes
 
 # get_hash {{{1
 def test_get_hash():
-    correct_sha1s = ('cb8aa4802996ac8de0436160e7bc0c79b600c222', 'da39a3ee5e6b4b0d3255bfef95601890afd80709')
+    correct_sha1s = ('cb8aa4802996ac8de0436160e7bc0c79b600c222',
+                     'da39a3ee5e6b4b0d3255bfef95601890afd80709')
     text = b'Hello world from beetmoverscript!'
 
     with tempfile.NamedTemporaryFile(delete=True) as fp:
@@ -293,7 +295,15 @@ def test_generate_manifest_maven(context, mocker, version, build_id, artifact_id
 
 # generate_beetmover_template_args {{{1
 @pytest.mark.parametrize("taskjson,partials", [
-    ('task.json', {}),
+    ('task.json', {
+        'fake-99.0a1.en-US.partial.mar': {
+            'artifact_name': 'fake-99.0a1.en-US.partial.mar',
+            'buildid': '20180524181234',
+            'locale': 'en-US',
+            'platform': 'android-api-15',
+            'previousBuildNumber': '1',
+            'previousVersion': '61.0b8'}
+    }),
     ('task_partials.json', {'target.partial-1.mar': {
         'artifact_name': 'target.partial-1.mar',
         'buildid': '20170831150342',
@@ -308,10 +318,10 @@ def test_beetmover_template_args_generation(context, taskjson, partials):
     expected_template_args = {
         'branch': 'mozilla-central',
         'filename_platform': 'android-arm',
-        'product': 'Fake',
+        'product': 'Fake-Fennec',
         'stage_platform': 'android-api-15',
         'platform': 'android-api-15',
-        'template_key': 'fake_nightly',
+        'template_key': 'fake-fennec_nightly',
         'upload_date': '2016/09/2016-09-01-16-26-14',
         'version': '99.0a1',
         'buildid': '20990205110000',
@@ -324,9 +334,8 @@ def test_beetmover_template_args_generation(context, taskjson, partials):
 
     context.task['payload']['locale'] = 'en-US'
     context.task['payload']['upstreamArtifacts'][0]['locale'] = 'en-US'
-    expected_template_args['template_key'] = 'fake_nightly'
+    expected_template_args['template_key'] = 'fake-fennec_nightly'
     expected_template_args['locales'] = ['en-US']
-    # import pdb; pdb.set_trace()
     template_args = generate_beetmover_template_args(context)
     assert template_args == expected_template_args
 
@@ -395,7 +404,7 @@ def test_beetmover_template_args_fennec_nightly(context):
     template_args = generate_beetmover_template_args(context)
     assert 'locale' not in template_args
     assert template_args['locales'] == ['en-US', 'multi']
-    assert template_args['template_key'] == 'fake_nightly'
+    assert template_args['template_key'] == 'fake-fennec_nightly'
 
 
 def test_beetmover_template_args_generation_release(context):
@@ -406,15 +415,23 @@ def test_beetmover_template_args_generation_release(context):
 
     expected_template_args = {
         'branch': 'mozilla-central',
-        'product': 'Fake',
+        'product': 'Fake-Fennec',
         'filename_platform': 'android-arm',
         'stage_platform': 'android-api-15',
         'platform': 'android-api-15',
-        'template_key': 'fake_candidates',
+        'template_key': 'fake-fennec_candidates',
         'upload_date': '2016/09/2016-09-01-16-26-14',
         'version': '4.4',
         'buildid': '20990205110000',
-        'partials': {},
+        'partials': {
+            'fake-99.0a1.en-US.partial.mar': {
+                'artifact_name': 'fake-99.0a1.en-US.partial.mar',
+                'buildid': '20180524181234',
+                'locale': 'en-US',
+                'platform': 'android-api-15',
+                'previousBuildNumber': '1',
+                'previousVersion': '61.0b8'}
+        },
         'build_number': 3,
         'locales': ['en-US'],
     }
@@ -483,7 +500,15 @@ def test_is_action_release_or_promotion(action, release, promotion):
 
 # get_partials_props {{{1
 @pytest.mark.parametrize("taskjson,expected", [
-    ('task.json', {}),
+    ('task.json', {
+        'fake-99.0a1.en-US.partial.mar': {
+            'artifact_name': 'fake-99.0a1.en-US.partial.mar',
+            'buildid': '20180524181234',
+            'locale': 'en-US',
+            'platform': 'android-api-15',
+            'previousBuildNumber': '1',
+            'previousVersion': '61.0b8'}
+    }),
     ('task_partials.json', {'target.partial-1.mar': {
         'artifact_name': 'target.partial-1.mar',
         'buildid': '20170831150342',
@@ -594,3 +619,24 @@ def test_is_partner_private_public_task(context, action, bucket, expected_privat
 
     assert is_partner_private_task(context) == expected_private
     assert is_partner_public_task(context) == expected_public
+
+
+# is_submit_balrog {{{1
+@pytest.mark.parametrize("context_groupSymbol, context_appName, artifact, locale, expected", ((
+    "fake", "Firefox", "target.complete.mar", "en-US", True
+), (
+    "fake", "Firefox", "fake-99.0a1.en-US.partial.mar", "en-US", True
+), (
+    "L10n", "Fennec", "target.apk", "en-US", True
+), (
+    "fake", "Fennec", "target.apk", "en-US", False
+), (
+    "fake", "Fennec", "target.apk", "multi", True
+), (
+    "fake", "Firefox", "target.checksums", "en-US", False
+)))
+def test_is_submit_balrog(context, context_groupSymbol, context_appName, artifact, locale, expected):
+    context.task['extra']['treeherder']['groupSymbol'] = context_groupSymbol
+    context.task['payload']['releaseProperties']['appName'] = context_appName
+
+    assert is_submit_balrog(context, artifact, locale) == expected
