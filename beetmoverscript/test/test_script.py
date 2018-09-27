@@ -117,9 +117,12 @@ async def test_push_to_releases(context, mocker, candidates_keys,
 async def test_push_to_maven(context, mocker, extract_zip_output, ErrorRaised):
     mocker.patch('beetmoverscript.utils.JINJA_ENV', get_test_jinja_env())
     context.task['payload']['upstreamArtifacts'] = []
-    mocker.patch('beetmoverscript.task.get_upstream_artifacts_with_zip_extract_param', new=lambda _: None)
-    mocker.patch('beetmoverscript.maven_utils.get_maven_expected_files_per_archive_per_task_id', new=lambda _, __: ('', {}))
-    mocker.patch('beetmoverscript.zip.check_and_extract_zip_archives', new=lambda _, __, ___: extract_zip_output)
+    mocker.patch('beetmoverscript.task.get_upstream_artifacts_with_zip_extract_param',
+                 new=lambda _: None)
+    mocker.patch('beetmoverscript.maven_utils.get_maven_expected_files_per_archive_per_task_id',
+                 new=lambda _, __: ('', {}))
+    mocker.patch('beetmoverscript.zip.check_and_extract_zip_archives',
+                 new=lambda _, __, ___: extract_zip_output)
 
     if ErrorRaised is None:
         async def assert_artifacts_to_beetmove(_, artifacts_to_beetmove, __):
@@ -207,7 +210,8 @@ def test_list_bucket_objects():
     s3_resource.Bucket = fake_bucket
     bucket.objects.filter = fake_filter
 
-    assert list_bucket_objects(mock.MagicMock(), s3_resource, None) == {"one": "asdf", "two": "foo"}
+    assert list_bucket_objects(mock.MagicMock(), s3_resource, None) == {
+        "one": "asdf", "two": "foo"}
 
 
 # setup_mimetypes {{{1
@@ -311,13 +315,14 @@ async def test_upload_to_s3(context, mocker):
 
 # move_beets {{{1
 @pytest.mark.asyncio
+@pytest.mark.parametrize("task_filename", ("task.json", "task_artifact_map.json"))
 @pytest.mark.parametrize("partials", (False, True))
-async def test_move_beets(partials, mocker):
+async def test_move_beets(task_filename, partials, mocker):
     mocker.patch('beetmoverscript.utils.JINJA_ENV', get_test_jinja_env())
 
     context = Context()
     context.config = get_fake_valid_config()
-    context.task = get_fake_valid_task()
+    context.task = get_fake_valid_task(taskjson=task_filename)
     context.release_props = context.task['payload']['releaseProperties']
     context.release_props['stage_platform'] = context.release_props['platform']
     context.bucket = 'nightly'
@@ -325,7 +330,12 @@ async def test_move_beets(partials, mocker):
     context.raw_balrog_manifest = dict()
     context.balrog_manifest = list()
     context.artifacts_to_beetmove = get_upstream_artifacts(context)
-    manifest = generate_beetmover_manifest(context)
+    if context.task['payload'].get('artifactMap'):
+        artifact_map = context.task['payload'].get('artifactMap')
+        manifest = None
+    else:
+        artifact_map = None
+        manifest = generate_beetmover_manifest(context)
 
     expected_sources = [
         os.path.abspath(
@@ -358,7 +368,7 @@ async def test_move_beets(partials, mocker):
          'pub/mobile/nightly/latest-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.test_packages.json'],
         ['pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.buildhub.json',
          'pub/mobile/nightly/latest-mozilla-central-fake/en-US/fake-99.0a1.en-US.buildhub.json'],
-        ['pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake 99.0a1.en-US.target.apk',
+        ['pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.apk',
          'pub/mobile/nightly/latest-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.apk']
     ]
 
@@ -398,14 +408,14 @@ async def test_move_beets(partials, mocker):
         }
         entry.update(complete_info)
         if partials:
-                entry['partialInfo'] = [
-                    {
-                        'from_buildid': 19991231235959,
-                        'hash': 'dummyhash',
-                        'size': 123456,
-                        'url': 'pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.txt'
-                    }
-                ]
+            entry['partialInfo'] = [
+                {
+                    'from_buildid': 19991231235959,
+                    'hash': 'dummyhash',
+                    'size': 123456,
+                    'url': 'pub/mobile/nightly/2016/09/2016-09-01-16-26-14-mozilla-central-fake/en-US/fake-99.0a1.en-US.target.txt'
+                }
+            ]
         expected_balrog_manifest.append(entry)
 
     actual_sources = []
@@ -415,7 +425,7 @@ async def test_move_beets(partials, mocker):
         manifest.sort(key=lambda entry: entry.get('blob_suffix', ''))
 
     async def fake_move_beet(context, source, destinations, locale,
-                             update_balrog_manifest, artifact_pretty_name, from_buildid):
+                             update_balrog_manifest, balrog_format, artifact_pretty_name, from_buildid):
         actual_sources.append(source)
         actual_destinations.append(destinations)
         if update_balrog_manifest:
@@ -433,13 +443,11 @@ async def test_move_beets(partials, mocker):
                 else:
                     return
             else:
-                if update_balrog_manifest is True:
-                    update_balrog_manifest = {'format': ''}
                 context.raw_balrog_manifest[locale].setdefault('completeInfo', {})[
-                    update_balrog_manifest['format']] = data
+                    balrog_format] = data
 
     with mock.patch('beetmoverscript.script.move_beet', fake_move_beet):
-        await move_beets(context, context.artifacts_to_beetmove, manifest)
+        await move_beets(context, context.artifacts_to_beetmove, manifest=manifest, artifact_map=artifact_map)
 
     assert sorted(expected_sources) == sorted(actual_sources)
     assert sorted(expected_destinations) == sorted(actual_destinations)
@@ -447,16 +455,20 @@ async def test_move_beets(partials, mocker):
     # Deal with different-sorted completeInfo
     sort_manifest(context.balrog_manifest)
     sort_manifest(expected_balrog_manifest)
+
+    import json
+    print("actual\n", json.dumps(context.balrog_manifest, indent=4))
+    print("expected\n", json.dumps(expected_balrog_manifest, indent=4))
     assert context.balrog_manifest == expected_balrog_manifest
 
 
 # move_beet {{{1
 @pytest.mark.asyncio
 @pytest.mark.parametrize('update_manifest,action', [
-     (True, 'push-to-candidates'),
-     (True, 'push-to-nightly'),
-     (False, 'push-to-nightly'),
-     (False, 'push-to-candidates')
+    (True, 'push-to-candidates'),
+    (True, 'push-to-nightly'),
+    (False, 'push-to-nightly'),
+    (False, 'push-to-candidates')
 ])
 async def test_move_beet(update_manifest, action):
     context = Context()
@@ -513,6 +525,7 @@ async def test_move_beet(update_manifest, action):
     with mock.patch('beetmoverscript.script.retry_upload', fake_retry_upload):
         await move_beet(context, target_source, target_destinations, locale,
                         update_balrog_manifest=update_manifest,
+                        balrog_format='',
                         artifact_pretty_name=pretty_name, from_buildid=None)
     assert expected_upload_args == actual_upload_args
     if update_manifest:
@@ -524,6 +537,7 @@ async def test_move_beet(update_manifest, action):
     with mock.patch('beetmoverscript.script.retry_upload', fake_retry_upload):
         await move_beet(context, target_source, target_destinations, locale,
                         update_balrog_manifest=update_manifest,
+                        balrog_format='',
                         artifact_pretty_name=pretty_name,
                         from_buildid='19991231235959')
     if update_manifest:
@@ -543,7 +557,8 @@ async def test_move_partner_beets(context, mocker):
     mocker.patch('beetmoverscript.utils.JINJA_ENV', get_test_jinja_env())
     mapping_manifest = generate_beetmover_manifest(context)
 
-    mocker.patch.object(beetmoverscript.script, 'get_destination_for_partner_repack_path', new=noop_sync)
+    mocker.patch.object(beetmoverscript.script,
+                        'get_destination_for_partner_repack_path', new=noop_sync)
     mocker.patch.object(beetmoverscript.script, 'upload_to_s3', new=noop_async)
     await move_partner_beets(context, mapping_manifest)
 
@@ -569,12 +584,12 @@ def test_get_destination_for_partner_repack_path(context, full_path,
     context.task['payload']['build_number'] = 99
     context.task['payload']['version'] = '9999.0'
     context.task['payload']['releaseProperties'] = {
-      "appName": "Firefox",
-      "buildid": "20180328233904",
-      "appVersion": "9999.0",
-      "hashType": "sha512",
-      "platform": "linux",
-      "branch": "maple"
+        "appName": "Firefox",
+        "buildid": "20180328233904",
+        "appVersion": "9999.0",
+        "hashType": "sha512",
+        "platform": "linux",
+        "branch": "maple"
     }
     # hack in locale
     for artifact_dict in context.task['payload']['upstreamArtifacts']:

@@ -14,7 +14,7 @@ from beetmoverscript.utils import (generate_beetmover_manifest, get_hash,
                                    get_partials_props, matches_exclude, get_candidates_prefix,
                                    get_releases_prefix, get_product_name,
                                    is_partner_private_task, is_partner_public_task,
-                                   _check_locale_consistency)
+                                   _check_locale_consistency, validated_task_id)
 from beetmoverscript.constants import HASH_BLOCK_SIZE
 
 assert context  # silence pyflakes
@@ -22,7 +22,8 @@ assert context  # silence pyflakes
 
 # get_hash {{{1
 def test_get_hash():
-    correct_sha1s = ('cb8aa4802996ac8de0436160e7bc0c79b600c222', 'da39a3ee5e6b4b0d3255bfef95601890afd80709')
+    correct_sha1s = ('cb8aa4802996ac8de0436160e7bc0c79b600c222',
+                     'da39a3ee5e6b4b0d3255bfef95601890afd80709')
     text = b'Hello world from beetmoverscript!'
 
     with tempfile.NamedTemporaryFile(delete=True) as fp:
@@ -594,3 +595,23 @@ def test_is_partner_private_public_task(context, action, bucket, expected_privat
 
     assert is_partner_private_task(context) == expected_private
     assert is_partner_public_task(context) == expected_public
+
+
+# validated_task_id {{{1
+@pytest.mark.parametrize("task_id", (
+    "eSzfNqMZT_mSiQQXu8hyqg",
+    "eSzfNqMZT_mSiQQXu8hyqg"
+))
+def test_validated_task_id(task_id):
+    assert validated_task_id(task_id) == task_id
+
+
+# validated_task_id {{{1
+@pytest.mark.parametrize("task_id", (
+    "foobar",
+    "",
+    "eSzfNqMZT_mSiQQXu8hyq",
+))
+def test_validated_task_id_raises(task_id):
+    with pytest.raises(ValueError):
+        validated_task_id(task_id)
