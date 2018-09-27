@@ -457,8 +457,6 @@ async def test_move_beets(task_filename, partials, mocker):
     sort_manifest(expected_balrog_manifest)
 
     import json
-    print("actual\n", json.dumps(context.balrog_manifest, indent=4))
-    print("expected\n", json.dumps(expected_balrog_manifest, indent=4))
     assert context.balrog_manifest == expected_balrog_manifest
 
 
