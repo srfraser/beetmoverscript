@@ -455,8 +455,6 @@ async def test_move_beets(task_filename, partials, mocker):
     # Deal with different-sorted completeInfo
     sort_manifest(context.balrog_manifest)
     sort_manifest(expected_balrog_manifest)
-
-    import json
     assert context.balrog_manifest == expected_balrog_manifest
 
 
