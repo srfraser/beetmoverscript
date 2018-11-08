@@ -295,3 +295,14 @@ def validated_task_id(task_id):
     if re.fullmatch(pattern, task_id):
         return task_id
     raise ValueError("No valid taskId found.")
+
+
+def extract_file_config_from_artifact_map(artifact_map, path, task_id, locale):
+    """Return matching artifact map config."""
+    for entry in artifact_map:
+        if entry['taskId'] != task_id or entry['locale'] != locale:
+            continue
+        if not entry['paths'].get(path):
+            continue
+        return entry['paths'][path]
+    raise TaskVerificationError('No artifact map entry for {}/{} {}'.format(task_id, locale, path))

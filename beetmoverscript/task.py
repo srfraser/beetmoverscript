@@ -188,7 +188,8 @@ def get_updated_buildhub_artifact(path, installer_path, context, locale, manifes
     installer_name = os.path.basename(installer_path)
     if artifact_map:
         task_id = get_taskId_from_full_path(path)
-        dest = artifact_map[task_id][installer_name]['destinations']
+        cfg = utils.extract_file_config_from_artifact_map(artifact_map, installer_name, task_id, locale)
+        dest = cfg['destinations']
     else:
         dest = manifest['mapping'][locale][installer_name]['destinations']
     url_prefix = context.config["bucket_config"][context.bucket]["url_prefix"]

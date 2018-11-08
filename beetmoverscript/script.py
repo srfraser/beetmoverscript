@@ -38,7 +38,7 @@ from beetmoverscript.utils import (
     get_bucket_name, get_bucket_url_prefix,
     is_release_action, is_promotion_action, get_partials_props,
     get_product_name, is_partner_action, is_partner_private_task,
-    is_partner_public_task, write_json
+    is_partner_public_task, write_json, extract_file_config_from_artifact_map
 )
 
 log = logging.getLogger(__name__)
@@ -53,9 +53,6 @@ async def push_to_nightly(context):
 
     Upon successful transfer, generate checksums files and manifests to be
     consumed downstream by balrogworkers."""
-    # determine artifacts to beetmove
-    context.artifacts_to_beetmove = get_upstream_artifacts(context)
-
     context.release_props = get_release_props(context)
 
     # balrog_manifest is written and uploaded as an artifact which is used by
@@ -74,8 +71,13 @@ async def push_to_nightly(context):
 
     # TODO: if artifactMap passes schema validation
     if context.task['payload'].get('artifactMap'):
+        # determine artifacts to beetmove
+        context.artifacts_to_beetmove = get_upstream_artifacts(context, preserve_full_paths=True)
         await move_beets(context, context.artifacts_to_beetmove, artifact_map=context.task['payload']['artifactMap'])
     else:
+        # determine artifacts to beetmove
+        context.artifacts_to_beetmove = get_upstream_artifacts(context)
+
         # generate beetmover mapping manifest
         mapping_manifest = generate_beetmover_manifest(context)
 
@@ -331,12 +333,15 @@ async def move_beets(context, artifacts_to_beetmove, manifest=None, artifact_map
 
             if artifact_map:
                 task_id = get_taskId_from_full_path(source)
-                artifact_pretty_name = artifact_map[task_id][artifact]['checksums_path']
-                destinations = artifact_map[task_id][artifact]['destinations']
-                update_balrog_manifest = artifact_map[task_id][artifact].get(
-                    'update_balrog_manifest', False)
-                balrog_format = artifact_map[task_id][artifact].get('balrog_format', '')
-                from_buildid = artifact_map[task_id][artifact].get('from_buildid')
+                # Should only ever be one (taskId, locale) match.
+                map_entry = extract_file_config_from_artifact_map(
+                    artifact_map, artifact, task_id, locale)
+
+                artifact_pretty_name = map_entry['checksums_path']
+                destinations = map_entry['destinations']
+                update_balrog_manifest = map_entry.get('update_balrog_manifest', False)
+                balrog_format = map_entry.get('balrog_format', '')
+                from_buildid = map_entry.get('from_buildid')
             else:
                 artifact_pretty_name = manifest['mapping'][locale][artifact]['s3_key']
                 destinations = [os.path.join(manifest["s3_bucket_path"],

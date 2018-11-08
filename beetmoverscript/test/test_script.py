@@ -458,6 +458,26 @@ async def test_move_beets(task_filename, partials, mocker):
     assert context.balrog_manifest == expected_balrog_manifest
 
 
+# move_beets {{{1
+@pytest.mark.asyncio
+async def test_move_beets_raises(mocker):
+    mocker.patch('beetmoverscript.utils.JINJA_ENV', get_test_jinja_env())
+
+    context = Context()
+    context.config = get_fake_valid_config()
+    context.task = get_fake_valid_task(taskjson='task_missing_installer.json')
+    context.release_props = context.task['payload']['releaseProperties']
+    context.release_props['stage_platform'] = context.release_props['platform']
+    context.bucket = 'nightly'
+    context.action = 'push-to-nightly'
+    context.raw_balrog_manifest = dict()
+    context.balrog_manifest = list()
+    context.artifacts_to_beetmove = get_upstream_artifacts(context)
+
+    with pytest.raises(ScriptWorkerTaskException):
+        await move_beets(context, context.artifacts_to_beetmove, manifest=None, artifact_map=None)
+
+
 # move_beet {{{1
 @pytest.mark.asyncio
 @pytest.mark.parametrize('update_manifest,action', [
@@ -636,14 +656,17 @@ def test_sanity_check_partner_path(path, raises, regexes):
 
 
 # async_main {{{1
-@pytest.mark.parametrize('action,raises', ((
-    'push-to-nightly', False
+@pytest.mark.parametrize('action,raises,task_filename', ((
+    'push-to-nightly', False, "task.json"
 ), (
-    'push-to-unknown', True
+    'push-to-nightly', False, "task_artifact_map.json"
+), (
+    'push-to-unknown', True, "task.json"
 )))
 @pytest.mark.asyncio
-async def test_async_main(context, mocker, action, raises):
+async def test_async_main(context, mocker, action, raises, task_filename):
     context.action = action
+    context.task = get_fake_valid_task(taskjson=task_filename)
 
     def fake_action(*args):
         return action
