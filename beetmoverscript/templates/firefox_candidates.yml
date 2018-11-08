@@ -65,6 +65,10 @@ mapping:
       s3_key: {{ platform }}/{{ locale }}/firefox-{{ version }}.web-platform.tests.tar.gz
       destinations:
         - {{ platform }}/{{ locale }}/firefox-{{ version }}.web-platform.tests.tar.gz
+    target.updater-dep.tests.tar.gz:
+      s3_key: {{ platform }}/{{ locale }}/firefox-{{ version }}.updater-dep.tests.tar.gz
+      destinations:
+        - {{ platform }}/{{ locale }}/firefox-{{ version }}.updater-dep.tests.tar.gz
     target.xpcshell.tests.zip:
       s3_key: {{ platform }}/{{ locale }}/firefox-{{ version }}.xpcshell.tests.zip
       destinations:
@@ -221,6 +225,10 @@ mapping:
       s3_key: {{ platform }}/{{ locale }}/Firefox Setup {{ version }}.exe
       destinations:
         - {{ platform }}/{{ locale }}/Firefox Setup {{ version }}.exe
+    target.installer.msi:
+      s3_key: {{ platform }}/{{ locale }}/Firefox Setup {{ version }}.msi
+      destinations:
+        - {{ platform }}/{{ locale }}/Firefox Setup {{ version }}.msi
   {% endif %}
   {% if platform in ["linux-i686"] %}
     target_info.txt:
