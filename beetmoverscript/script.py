@@ -169,21 +169,30 @@ async def push_to_maven(context):
     context.checksums = dict()  # Needed by downstream calls
     context.raw_balrog_manifest = dict()    # Needed by downstream calls
 
-    mapping_manifest = generate_beetmover_manifest(context)
-    validate_bucket_paths(context.bucket, mapping_manifest['s3_bucket_path'])
+    if context.task['payload'].get('artifactMap'):
+        context.artifacts_to_beetmove = _extract_and_check_maven_artifacts_to_beetmove(
+            artifacts_to_beetmove,
+            context.config.get('zip_max_file_size_in_mb', DEFAULT_ZIP_MAX_FILE_SIZE_IN_MB),
+            artifact_map=context.task['payload'].get('artifactMap')
+        )
 
-    context.artifacts_to_beetmove = _extract_and_check_maven_artifacts_to_beetmove(
-        artifacts_to_beetmove,
-        mapping_manifest,
-        context.config.get('zip_max_file_size_in_mb', DEFAULT_ZIP_MAX_FILE_SIZE_IN_MB)
-    )
+        await move_beets(context, context.artifacts_to_beetmove, artifact_map=context.task['payload']['artifactMap'])
+    else:
+        mapping_manifest = generate_beetmover_manifest(context)
+        validate_bucket_paths(context.bucket, mapping_manifest['s3_bucket_path'])
 
-    await move_beets(context, context.artifacts_to_beetmove, mapping_manifest)
+        context.artifacts_to_beetmove = _extract_and_check_maven_artifacts_to_beetmove(
+            artifacts_to_beetmove,
+            context.config.get('zip_max_file_size_in_mb', DEFAULT_ZIP_MAX_FILE_SIZE_IN_MB),
+            mapping_manifest=mapping_manifest
+        )
+
+        await move_beets(context, context.artifacts_to_beetmove, manifest=mapping_manifest)
 
 
-def _extract_and_check_maven_artifacts_to_beetmove(artifacts, mapping_manifest, zip_max_file_size_in_mb):
+def _extract_and_check_maven_artifacts_to_beetmove(artifacts, zip_max_file_size_in_mb, mapping_manifest=None, artifact_map=None):
     expected_files = maven_utils.get_maven_expected_files_per_archive_per_task_id(
-        artifacts, mapping_manifest
+        artifacts, mapping_manifest=mapping_manifest, artifact_map=artifact_map
     )
 
     extracted_paths_per_archive = zip.check_and_extract_zip_archives(

@@ -120,12 +120,12 @@ async def test_push_to_maven(context, mocker, extract_zip_output, ErrorRaised):
     mocker.patch('beetmoverscript.task.get_upstream_artifacts_with_zip_extract_param',
                  new=lambda _: None)
     mocker.patch('beetmoverscript.maven_utils.get_maven_expected_files_per_archive_per_task_id',
-                 new=lambda _, __: ('', {}))
+                 new=lambda _, **kwargs: ('', {}))
     mocker.patch('beetmoverscript.zip.check_and_extract_zip_archives',
                  new=lambda _, __, ___: extract_zip_output)
 
     if ErrorRaised is None:
-        async def assert_artifacts_to_beetmove(_, artifacts_to_beetmove, __):
+        async def assert_artifacts_to_beetmove(_, artifacts_to_beetmove, **kwargs):
             assert artifacts_to_beetmove == {
                 'en-US': {
                     'geckoview-beta-x86-62.0b3.aar': '/work_dir/cot/someTaskId/public/build/target.maven.zip.out/org/mozilla/geckoview-beta-x86/62.0b3/geckoview-beta-x86-62.0b3.aar',  # noqa E501
