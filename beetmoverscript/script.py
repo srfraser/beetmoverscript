@@ -206,12 +206,17 @@ def _extract_and_check_maven_artifacts_to_beetmove(artifacts, zip_max_file_size_
         raise NotImplementedError('More than 1 archive extracted. Only 1 is supported at once')
     extracted_paths_per_relative_path = list(extracted_paths_per_archive.values())[0]
 
-    return {
-        'en-US': {
-            os.path.basename(path_in_archive): full_path
-            for path_in_archive, full_path in extracted_paths_per_relative_path.items()
+    if artifact_map:
+        return {
+            'en-US': extracted_paths_per_relative_path
         }
-    }
+    else:
+        return {
+            'en-US': {
+                os.path.basename(path_in_archive): full_path
+                for path_in_archive, full_path in extracted_paths_per_relative_path.items()
+            }
+        }
 
 
 # copy_beets {{{1

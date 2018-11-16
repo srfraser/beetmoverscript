@@ -210,9 +210,9 @@ async def test_push_to_maven_with_map(context, mocker, artifact_map, extract_zip
         async def assert_artifacts_to_beetmove(_, artifacts_to_beetmove, **kwargs):
             assert artifacts_to_beetmove == {
                 'en-US': {
-                    'geckoview-beta-x86-62.0b3.aar': '/work_dir/cot/someTaskId/public/build/target.maven.zip.out/org/mozilla/geckoview-beta-x86/62.0b3/geckoview-beta-x86-62.0b3.aar',  # noqa E501
-                    'geckoview-beta-x86-62.0b3.aar.md5': '/work_dir/cot/someTaskId/public/build/target.maven.zip.out/org/mozilla/geckoview-beta-x86/62.0b3/geckoview-beta-x86-62.0b3.aar.md5',  # noqa E501
-                    'geckoview-beta-x86-62.0b3.aar.sha1': '/work_dir/cot/someTaskId/public/build/target.maven.zip.out/org/mozilla/geckoview-beta-x86/62.0b3/geckoview-beta-x86-62.0b3.aar.sha1',    # noqa E501
+                    'org/mozilla/geckoview-beta-x86/62.0b3/geckoview-beta-x86-62.0b3.aar': '/work_dir/cot/someTaskId/public/build/target.maven.zip.out/org/mozilla/geckoview-beta-x86/62.0b3/geckoview-beta-x86-62.0b3.aar',  # noqa E501
+                    'org/mozilla/geckoview-beta-x86/62.0b3/geckoview-beta-x86-62.0b3.aar.md5': '/work_dir/cot/someTaskId/public/build/target.maven.zip.out/org/mozilla/geckoview-beta-x86/62.0b3/geckoview-beta-x86-62.0b3.aar.md5',  # noqa E501
+                    'org/mozilla/geckoview-beta-x86/62.0b3/geckoview-beta-x86-62.0b3.aar.sha1': '/work_dir/cot/someTaskId/public/build/target.maven.zip.out/org/mozilla/geckoview-beta-x86/62.0b3/geckoview-beta-x86-62.0b3.aar.sha1',    # noqa E501
                 },
             }
 
