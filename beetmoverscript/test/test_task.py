@@ -355,6 +355,8 @@ def test_is_custom_beetmover_task(context, kind, expected):
 @pytest.mark.parametrize("path, expected", ((
     '/src/beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.mozinfo.json', 'eSzfNqMZT_mSiQQXu8hyqg'
 ), (
+    '/src/beetmoverscript/test/test_work_dir/cot/eSzfNqMZT_mSiQQXu8cotg/public/build/target.mozinfo.json', 'eSzfNqMZT_mSiQQXu8cotg'
+), (
     'test_work_dir/cot/eSzfNqMZT_mSiQQXu8hyqg/public/build/target.mozinfo.json', 'eSzfNqMZT_mSiQQXu8hyqg'
 ),))
 def test_get_taskId_from_full_path(path, expected):
