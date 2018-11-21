@@ -58,6 +58,10 @@ def _get_maven_expected_files_in_archive(mapping_manifest):
 
 
 def _get_maven_expected_files_from_map(artifact_map, task_id):
+    """Extract relevant artifact map entry.
+
+    Artifact map is a list of dicts, and we want the dictionary which has a matching
+    taskId entry. `next()` will find that for us, over a generator."""
     mapping = next(entry for entry in artifact_map if entry['taskId'] == task_id)
     return list(mapping['paths'].keys())
 
