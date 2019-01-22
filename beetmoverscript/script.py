@@ -8,6 +8,7 @@ from botocore.exceptions import ClientError
 import logging
 from multiprocessing.pool import ThreadPool
 import os
+import time
 import re
 from redo import retry
 import sys
@@ -40,6 +41,7 @@ from beetmoverscript.utils import (
     get_product_name, is_partner_action, is_partner_private_task,
     is_partner_public_task, write_json, extract_file_config_from_artifact_map
 )
+from beetmoverscript.metrics import metrics_client
 
 log = logging.getLogger(__name__)
 
@@ -580,6 +582,13 @@ async def retry_upload(context, destinations, path):
 # put {{{1
 async def put(context, url, headers, abs_filename, session=None):
     session = session or context.session
+    _, ext = os.path.splitext(abs_filename)
+    if ext and ext != '':
+        tags = {'filetype': ext.replace('.', '')}
+    else:
+        tags = {'filetype': 'none'}
+
+    start = time.time()
     with open(abs_filename, "rb") as fh:
         async with session.put(url, data=fh, headers=headers, compress=False) as resp:
             log.info("put {}: {}".format(abs_filename, resp.status))
@@ -587,9 +596,11 @@ async def put(context, url, headers, abs_filename, session=None):
             if response_text:
                 log.info(response_text)
             if resp.status not in (200, 204):
+                metrics_client.metric('beetmover.put.durations', time.time() - start, tags=tags)
                 raise ScriptWorkerRetryException(
                     "Bad status {}".format(resp.status),
                 )
+    metrics_client.metric('beetmover.put.durations', time.time() - start, tags=tags)
     return resp
 
 
@@ -639,7 +650,8 @@ def main(config_path=None):
     }
 
     # There are several task schema. Validation occurs in async_main
-    client.sync_main(async_main, config_path=config_path, default_config=default_config, should_validate_task=False)
+    client.sync_main(async_main, config_path=config_path,
+                     default_config=default_config, should_validate_task=False)
 
 
 __name__ == '__main__' and main()
