@@ -3,7 +3,7 @@ import logging
 log = logging.getLogger(__name__)
 
 
-class DummyClient(object):
+class LocalClient(object):
     def __init__(self, *args, **kwargs):
         pass
 
@@ -15,5 +15,5 @@ try:
     from telegraf.client import TelegrafClient
     metrics_client = TelegrafClient()
 except (ImportError, ModuleNotFoundError):
-    log.warning('Telegraf client not available, metrics collection disabled.')
-    metrics_client = DummyClient()
+    log.warning("Telegraf client not available, metrics collection disabled.")
+    metrics_client = LocalClient()
