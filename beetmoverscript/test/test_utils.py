@@ -688,14 +688,18 @@ def test_extract_file_config_from_artifact_map_raises(task_id, locale, filename)
             task_def['payload']['artifactMap'], filename, task_id, locale)
 
 
-@pytest.mark.parametrize("path,found", ((
-    "buildhub.json", 'buildhub.json'
+@pytest.mark.parametrize("path,locale,found", ((
+    "buildhub.json", 'en-US', 'buildhub.json'
 ), (
-    'foobar', None
+    "buildhub.json", 'en-GB', None
+), (
+    'foobar', 'en-GB', None
+), (
+    'foobar', 'en-US', None
 )))
-def test_extract_full_artifact_map_path(path, found):
+def test_extract_full_artifact_map_path(path, locale, found):
     task_def = get_fake_valid_task(taskjson='task_artifact_map.json')
-    assert extract_full_artifact_map_path(task_def['payload']['artifactMap'], path) == found
+    assert extract_full_artifact_map_path(task_def['payload']['artifactMap'], path, locale) == found
 
 
 @pytest.mark.parametrize("filename, basenames, expected", ((

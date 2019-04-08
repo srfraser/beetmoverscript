@@ -318,11 +318,11 @@ def exists_or_endswith(filename, basenames):
     return False
 
 
-def extract_full_artifact_map_path(artifact_map, basepath):
-    """Find the artifact map entry from the given path.
-
-    If no path is found, it returns `None` naturally."""
+def extract_full_artifact_map_path(artifact_map, basepath, locale):
+    """Find the artifact map entry from the given path."""
     for entry in artifact_map:
+        if entry['locale'] != locale:
+            continue
         for path in entry['paths']:
             if path.endswith(basepath):
                 return path
